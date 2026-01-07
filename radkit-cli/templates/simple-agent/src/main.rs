@@ -1,5 +1,5 @@
 use radkit::agent::LlmWorker;
-use radkit::models::providers::GeminiLlm;
+use radkit::models::providers::{{ provider_struct }};
 use radkit::macros::{tool, LLMOutput};
 use radkit::tools::ToolResult;
 use schemars::JsonSchema;
@@ -38,9 +38,9 @@ async fn get_weather(args: GetWeatherArgs) -> ToolResult {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize LLM from environment (e.g. GEMINI_API_KEY)
+    // Initialize LLM from environment (e.g. {{ provider_env_var }})
     // You can swap this for AnthropicLlm, OpenAILlm, etc.
-    let llm = GeminiLlm::from_env("gemini-1.5-flash")?;
+    let llm = {{ provider_struct }}::from_env("{{ default_model }}")?;
 
     let worker = LlmWorker::<WeatherReport>::builder(llm)
         .with_system_instructions("You are a helpful weather assistant.")
