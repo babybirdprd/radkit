@@ -1,5 +1,5 @@
 [workspace]
-members = ["a2a-types", "a2a-client", "radkit", "radkit-macros"]
+members = ["a2a-types", "a2a-client", "radkit", "radkit-macros", "radkit-cli"]
 resolver = "2"
 
 [workspace.dependencies]
