@@ -33,10 +33,22 @@ fn main() -> Result<()> {
             ToolCommands::Add { name } => {
                 tool::add_tool(name)?;
             }
+            ToolCommands::List => {
+                tool::list_tools()?;
+            }
+            ToolCommands::Remove { name } => {
+                tool::remove_tool(name)?;
+            }
         },
         Commands::Skill { command } => match command {
             SkillCommands::Add { name } => {
                 skill::add_skill(name)?;
+            }
+            SkillCommands::List => {
+                skill::list_skills()?;
+            }
+            SkillCommands::Remove { name } => {
+                skill::remove_skill(name)?;
             }
         },
         Commands::Provider { command } => match command {
