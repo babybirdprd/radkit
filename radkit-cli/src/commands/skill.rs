@@ -2,9 +2,15 @@ use anyhow::Result;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input};
 use std::fs;
-use crate::utils::to_camel_case;
+use crate::utils::{self, to_camel_case, validate_rust_identifier};
 
 pub fn add_skill(name: String) -> Result<()> {
+    // Sanitize name for Rust module/file (snake_case)
+    let safe_name = name.replace('-', "_");
+
+    // Validate after sanitization
+    validate_rust_identifier(&safe_name)?;
+
     let current_dir = std::env::current_dir()?;
     let cargo_toml = current_dir.join("Cargo.toml");
 
@@ -17,8 +23,6 @@ pub fn add_skill(name: String) -> Result<()> {
         fs::create_dir_all(&skills_dir)?;
     }
 
-    // Sanitize name for Rust module/file (snake_case)
-    let safe_name = name.replace('-', "_");
     // Camel case for Structs
     let camel_name = to_camel_case(&safe_name);
 
@@ -86,35 +90,23 @@ impl SkillHandler for {camel_name}Skill {{
 
     println!("\nNext steps:");
 
-    // Optional: Try to append to mod.rs automatically
-    let mod_rs = skills_dir.join("mod.rs");
-    let mod_entry = format!("pub mod {};\n", safe_name);
+    // Use utils to ensure mod declaration in main.rs
+    utils::ensure_mod_decl(&current_dir, "skills")?;
 
-    if !mod_rs.exists() {
-         fs::write(&mod_rs, &mod_entry)?;
-         println!("   (Created src/skills/mod.rs and added module declaration)");
-    } else {
-         let content = fs::read_to_string(&mod_rs)?;
-         if !content.contains(&format!("mod {};", safe_name)) {
-             use std::io::Write;
-             let mut file = fs::OpenOptions::new().append(true).open(&mod_rs)?;
-             file.write_all(mod_entry.as_bytes())?;
-             println!("   (Added module declaration to src/skills/mod.rs)");
-         }
-    }
+    // Use utils to register module in skills/mod.rs
+    utils::register_child_module(&skills_dir, &safe_name)?;
 
-    println!("1. Ensure `pub mod skills;` is in `src/main.rs` or `src/lib.rs`.");
+    println!("1. Ensure `pub mod skills;` is in `src/main.rs` or `src/lib.rs` (attempted automatically).");
     println!("2. Register the skill in `src/main.rs`:");
     println!(
         "   .with_skill(crate::skills::{}::{}Skill)",
         safe_name, camel_name
     );
 
-    // Automatic wiring
-    if let Err(e) = wire_skill(&safe_name, &camel_name, &current_dir) {
+    // Automatic wiring using utils
+    let skill_call = format!("\n        .with_skill(crate::skills::{}::{}Skill)", safe_name, camel_name);
+    if let Err(e) = utils::wire_in_main(&current_dir, &skill_call) {
         println!("{}", style(format!("Warning: Automatic wiring failed: {}", e)).yellow());
-    } else {
-        println!("{}", style("✔ Automatically wired skill in main.rs").green());
     }
 
     Ok(())
@@ -151,6 +143,7 @@ pub fn list_skills() -> Result<()> {
 }
 
 pub fn remove_skill(name: String) -> Result<()> {
+    // Basic validation, ensure_rust_identifier is stricter
     if name.contains('.') || name.contains('/') || name.contains('\\') {
         anyhow::bail!("Invalid skill name: {}", name);
     }
@@ -192,73 +185,8 @@ pub fn remove_skill(name: String) -> Result<()> {
     }
 
     // 3. Remove from src/main.rs wiring
-    unwire_skill(&safe_name, &camel_name, &current_dir)?;
-
-    Ok(())
-}
-
-fn unwire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Path) -> Result<()> {
-    let main_rs = project_root.join("src").join("main.rs");
-    if !main_rs.exists() {
-        return Ok(());
-    }
-
-    let content = fs::read_to_string(&main_rs)?;
-
-    // Pattern: .with_skill(crate::skills::{skill_name}::{camel_name}Skill)
-    let skill_call_substr = format!("crate::skills::{}::{}Skill", skill_name, camel_name);
-
-    let mut new_lines: Vec<&str> = Vec::new();
-    let mut changed = false;
-
-    for line in content.lines() {
-        if line.contains(".with_skill(") && line.contains(&skill_call_substr) {
-            changed = true;
-            continue; // Skip this line
-        }
-        new_lines.push(line);
-    }
-
-    if changed {
-        fs::write(main_rs, new_lines.join("\n"))?;
-        println!("{} Removed skill wiring from src/main.rs", style("✔").green());
-    } else {
-         println!("{}", style("Warning: Could not find skill wiring in src/main.rs to remove").yellow());
-    }
-
-    Ok(())
-}
-
-fn wire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Path) -> Result<()> {
-    // 1. Ensure `pub mod skills;` in src/main.rs (or lib.rs)
-    let main_rs = project_root.join("src").join("main.rs");
-    if !main_rs.exists() {
-        return Ok(());
-    }
-
-    let mut content = fs::read_to_string(&main_rs)?;
-
-    // Add module declaration if missing
-    if !content.contains("mod skills;") {
-        if let Some(pos) = content.rfind("use ") {
-             if let Some(end_line) = content[pos..].find('\n') {
-                 let insert_pos = pos + end_line + 1;
-                 content.insert_str(insert_pos, "pub mod skills;\n");
-             }
-        } else {
-            content.insert_str(0, "pub mod skills;\n");
-        }
-    }
-
-    // 2. Add `.with_skill(...)` to the builder chain
-    let skill_call = format!("\n        .with_skill(crate::skills::{}::{}Skill)", skill_name, camel_name);
-
-    if !content.contains(&skill_call.trim()) {
-        if let Some(pos) = content.rfind(".build()") {
-            content.insert_str(pos, &skill_call);
-            fs::write(main_rs, content)?;
-        }
-    }
+    let skill_call_substr = format!("crate::skills::{}::{}Skill", safe_name, camel_name);
+    utils::unwire_in_main(&current_dir, &skill_call_substr)?;
 
     Ok(())
 }

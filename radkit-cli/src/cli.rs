@@ -41,6 +41,8 @@ pub enum Commands {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Check the agent environment
+    Check,
     /// Tool management commands
     Tool {
         #[command(subcommand)]
