@@ -1,0 +1,16 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+radkit = {{ radkit_dependency }}
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+async-trait = "0.1"
+console = "0.15"
+dialoguer = "0.11"
+
+[workspace]

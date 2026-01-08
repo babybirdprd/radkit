@@ -55,6 +55,16 @@ enum Commands {
         #[command(subcommand)]
         command: ToolCommands,
     },
+    /// Skill management commands
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommands,
+    },
+    /// Provider management commands
+    Provider {
+        #[command(subcommand)]
+        command: ProviderCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -62,6 +72,24 @@ enum ToolCommands {
     /// Add a new tool to the project
     Add {
         /// Name of the tool
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillCommands {
+    /// Add a new skill to the project
+    Add {
+        /// Name of the skill
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProviderCommands {
+    /// Add provider configuration instructions
+    Add {
+        /// Name of the provider (openai, anthropic, gemini)
         name: String,
     },
 }
@@ -90,6 +118,16 @@ fn main() -> Result<()> {
         Commands::Tool { command } => match command {
             ToolCommands::Add { name } => {
                 add_tool(name)?;
+            }
+        },
+        Commands::Skill { command } => match command {
+            SkillCommands::Add { name } => {
+                add_skill(name)?;
+            }
+        },
+        Commands::Provider { command } => match command {
+            ProviderCommands::Add { name } => {
+                add_provider(name)?;
             }
         },
     }
@@ -206,6 +244,130 @@ async fn {name}(_args: {camel_name}Args) -> ToolResult {{
         "   .with_tool(crate::tools::{}::{})",
         safe_name, safe_name
     );
+
+    Ok(())
+}
+
+fn add_skill(name: String) -> Result<()> {
+    let current_dir = std::env::current_dir()?;
+    let cargo_toml = current_dir.join("Cargo.toml");
+
+    if !cargo_toml.exists() {
+        anyhow::bail!("Cargo.toml not found. Are you in a radkit agent project root?");
+    }
+
+    let skills_dir = current_dir.join("src").join("skills");
+    if !skills_dir.exists() {
+        fs::create_dir_all(&skills_dir)?;
+    }
+
+    // Sanitize name for Rust module/file (snake_case)
+    let safe_name = name.replace('-', "_");
+    // Camel case for Structs
+    let camel_name = to_camel_case(&safe_name);
+
+    let skill_path = skills_dir.join(format!("{}.rs", safe_name));
+    if skill_path.exists() {
+        anyhow::bail!("Skill file 'src/skills/{}.rs' already exists", safe_name);
+    }
+
+    let skill_content = format!(
+        r#"use radkit::agent::{{OnRequestResult, SkillHandler}};
+use radkit::errors::{{AgentError, AgentResult}};
+use radkit::macros::skill;
+use radkit::models::Content;
+use radkit::runtime::context::{{ProgressSender, State}};
+use radkit::runtime::AgentRuntime;
+use async_trait::async_trait;
+
+#[skill(
+    id = "{safe_name}",
+    name = "{camel_name} Skill",
+    description = "Description for {camel_name}",
+    tags = ["{safe_name}"],
+    examples = [],
+    input_modes = ["text/plain"],
+    output_modes = ["application/json"]
+)]
+pub struct {camel_name}Skill;
+
+#[async_trait]
+impl SkillHandler for {camel_name}Skill {{
+    async fn on_request(
+        &self,
+        _state: &mut State,
+        progress: &ProgressSender,
+        _runtime: &dyn AgentRuntime,
+        content: Content,
+    ) -> AgentResult<OnRequestResult> {{
+        // Implement skill logic here
+        progress.send_update("Processing...").await?;
+
+        Ok(OnRequestResult::Completed {{
+            message: Some(Content::from_text("Skill executed")),
+            artifacts: vec![],
+        }})
+    }}
+}}
+"#,
+        safe_name = safe_name,
+        camel_name = camel_name
+    );
+
+    fs::write(&skill_path, skill_content)?;
+
+    println!(
+        "{} Skill created at {}",
+        style("✔").green(),
+        style(skill_path.display()).bold()
+    );
+
+    println!("\nNext steps:");
+
+    // Optional: Try to append to mod.rs automatically
+    let mod_rs = skills_dir.join("mod.rs");
+    let mod_entry = format!("pub mod {};\n", safe_name);
+
+    if !mod_rs.exists() {
+         fs::write(&mod_rs, &mod_entry)?;
+         println!("   (Created src/skills/mod.rs and added module declaration)");
+    } else {
+         let content = fs::read_to_string(&mod_rs)?;
+         if !content.contains(&format!("mod {};", safe_name)) {
+             use std::io::Write;
+             let mut file = fs::OpenOptions::new().append(true).open(&mod_rs)?;
+             file.write_all(mod_entry.as_bytes())?;
+             println!("   (Added module declaration to src/skills/mod.rs)");
+         }
+    }
+
+    println!("1. Ensure `pub mod skills;` is in `src/main.rs` or `src/lib.rs`.");
+    println!("2. Register the skill in `src/main.rs`:");
+    println!(
+        "   .with_skill(crate::skills::{}::{}Skill)",
+        safe_name, camel_name
+    );
+
+    Ok(())
+}
+
+fn add_provider(name: String) -> Result<()> {
+    let (provider_struct, env_var) = match name.to_lowercase().as_str() {
+        "gemini" => ("GeminiLlm", "GEMINI_API_KEY"),
+        "openai" => ("OpenAILlm", "OPENAI_API_KEY"),
+        "anthropic" => ("AnthropicLlm", "ANTHROPIC_API_KEY"),
+        _ => anyhow::bail!("Unknown provider '{}'. Supported: gemini, openai, anthropic", name),
+    };
+
+    println!("{}", style("Provider Configuration Instructions").bold());
+    println!("{}", style("-----------------------------------").dim());
+
+    println!("1. Add the environment variable:");
+    println!("   export {}=your_key_here", env_var);
+
+    println!("\n2. Update your `src/main.rs` to use `{}`:", provider_struct);
+    println!("\n   use radkit::models::providers::{};", provider_struct);
+    println!("   let llm = {}::from_env(\"model-name\")?;", provider_struct);
 
     Ok(())
 }
