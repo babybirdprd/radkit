@@ -120,6 +120,115 @@ impl SkillHandler for {camel_name}Skill {{
     Ok(())
 }
 
+pub fn list_skills() -> Result<()> {
+    let current_dir = std::env::current_dir()?;
+    let skills_dir = current_dir.join("src").join("skills");
+
+    if !skills_dir.exists() {
+        println!("No skills found (src/skills directory does not exist).");
+        return Ok(());
+    }
+
+    println!("Available skills:");
+    let mut found = false;
+    for entry in fs::read_dir(skills_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            let file_name = path.file_stem().unwrap().to_string_lossy();
+            if file_name != "mod" {
+                println!("  - {}", style(file_name).cyan());
+                found = true;
+            }
+        }
+    }
+
+    if !found {
+        println!("  (No skills found)");
+    }
+
+    Ok(())
+}
+
+pub fn remove_skill(name: String) -> Result<()> {
+    if name.contains('.') || name.contains('/') || name.contains('\\') {
+        anyhow::bail!("Invalid skill name: {}", name);
+    }
+
+    let current_dir = std::env::current_dir()?;
+    let skills_dir = current_dir.join("src").join("skills");
+    let safe_name = name.replace('-', "_");
+    let camel_name = to_camel_case(&safe_name);
+    let skill_path = skills_dir.join(format!("{}.rs", safe_name));
+
+    if !skill_path.exists() {
+        anyhow::bail!("Skill '{}' not found at {}", name, skill_path.display());
+    }
+
+    // 1. Delete the file
+    fs::remove_file(&skill_path)?;
+    println!(
+        "{} Removed skill file {}",
+        style("✔").green(),
+        style(skill_path.display()).bold()
+    );
+
+    // 2. Remove from src/skills/mod.rs
+    let mod_rs = skills_dir.join("mod.rs");
+    if mod_rs.exists() {
+        let content = fs::read_to_string(&mod_rs)?;
+        let mod_decl = format!("pub mod {};\n", safe_name);
+        let new_content = content.replace(&mod_decl, "");
+        // Try fallback
+        let new_content = if new_content == content {
+            content.replace(&format!("pub mod {};", safe_name), "")
+                   .replace(&format!("mod {};", safe_name), "")
+        } else {
+            new_content
+        };
+
+        fs::write(&mod_rs, new_content.trim())?;
+        println!("{} Removed module declaration from src/skills/mod.rs", style("✔").green());
+    }
+
+    // 3. Remove from src/main.rs wiring
+    unwire_skill(&safe_name, &camel_name, &current_dir)?;
+
+    Ok(())
+}
+
+fn unwire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Path) -> Result<()> {
+    let main_rs = project_root.join("src").join("main.rs");
+    if !main_rs.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&main_rs)?;
+
+    // Pattern: .with_skill(crate::skills::{skill_name}::{camel_name}Skill)
+    let skill_call_substr = format!("crate::skills::{}::{}Skill", skill_name, camel_name);
+
+    let mut new_lines: Vec<&str> = Vec::new();
+    let mut changed = false;
+
+    for line in content.lines() {
+        if line.contains(".with_skill(") && line.contains(&skill_call_substr) {
+            changed = true;
+            continue; // Skip this line
+        }
+        new_lines.push(line);
+    }
+
+    if changed {
+        fs::write(main_rs, new_lines.join("\n"))?;
+        println!("{} Removed skill wiring from src/main.rs", style("✔").green());
+    } else {
+         println!("{}", style("Warning: Could not find skill wiring in src/main.rs to remove").yellow());
+    }
+
+    Ok(())
+}
+
 fn wire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Path) -> Result<()> {
     // 1. Ensure `pub mod skills;` in src/main.rs (or lib.rs)
     let main_rs = project_root.join("src").join("main.rs");

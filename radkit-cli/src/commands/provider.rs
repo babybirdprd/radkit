@@ -6,7 +6,13 @@ pub fn add_provider(name: String) -> Result<()> {
         "gemini" => ("GeminiLlm", "GEMINI_API_KEY"),
         "openai" => ("OpenAILlm", "OPENAI_API_KEY"),
         "anthropic" => ("AnthropicLlm", "ANTHROPIC_API_KEY"),
-        _ => anyhow::bail!("Unknown provider '{}'. Supported: gemini, openai, anthropic", name),
+        "deepseek" => ("DeepSeekLlm", "DEEPSEEK_API_KEY"),
+        "grok" => ("GrokLlm", "XAI_API_KEY"),
+        "openrouter" => ("OpenRouterLlm", "OPENROUTER_API_KEY"),
+        _ => anyhow::bail!(
+            "Unknown provider '{}'. Supported: gemini, openai, anthropic, deepseek, grok, openrouter",
+            name
+        ),
     };
 
     println!("{}", style("Provider Configuration Instructions").bold());

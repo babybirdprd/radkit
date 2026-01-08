@@ -65,12 +65,26 @@ pub enum ToolCommands {
         /// Name of the tool
         name: String,
     },
+    /// List available tools
+    List,
+    /// Remove a tool from the project
+    Remove {
+        /// Name of the tool
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum SkillCommands {
     /// Add a new skill to the project
     Add {
+        /// Name of the skill
+        name: String,
+    },
+    /// List available skills
+    List,
+    /// Remove a skill from the project
+    Remove {
         /// Name of the skill
         name: String,
     },

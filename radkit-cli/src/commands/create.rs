@@ -41,7 +41,14 @@ pub fn create_agent(
     let provider_name = match provider {
         Some(p) => p.to_lowercase(),
         None => {
-            let providers = vec!["Gemini", "OpenAI", "Anthropic"];
+            let providers = vec![
+                "Gemini",
+                "OpenAI",
+                "Anthropic",
+                "DeepSeek",
+                "Grok",
+                "OpenRouter",
+            ];
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Choose an LLM provider")
                 .items(&providers)
@@ -75,7 +82,18 @@ pub fn create_agent(
     let (provider_struct, provider_env_var, default_model) = match provider_name.as_str() {
         "gemini" => ("GeminiLlm", "GEMINI_API_KEY", "gemini-1.5-flash"),
         "openai" => ("OpenAILlm", "OPENAI_API_KEY", "gpt-4o"),
-        "anthropic" => ("AnthropicLlm", "ANTHROPIC_API_KEY", "claude-3-5-sonnet-20240620"),
+        "anthropic" => (
+            "AnthropicLlm",
+            "ANTHROPIC_API_KEY",
+            "claude-3-5-sonnet-20240620",
+        ),
+        "deepseek" => ("DeepSeekLlm", "DEEPSEEK_API_KEY", "deepseek-chat"),
+        "grok" => ("GrokLlm", "XAI_API_KEY", "grok-beta"),
+        "openrouter" => (
+            "OpenRouterLlm",
+            "OPENROUTER_API_KEY",
+            "google/gemini-2.0-flash-001",
+        ),
         _ => ("GeminiLlm", "GEMINI_API_KEY", "gemini-1.5-flash"), // Default fallback
     };
     context.insert("provider_struct", provider_struct);
