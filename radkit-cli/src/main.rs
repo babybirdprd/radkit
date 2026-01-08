@@ -6,7 +6,7 @@ mod commands;
 mod utils;
 
 use cli::{Cli, Commands, ToolCommands, SkillCommands, ProviderCommands};
-use commands::{create, run, tool, skill, provider};
+use commands::{create, run, tool, skill, provider, check};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -28,6 +28,9 @@ fn main() -> Result<()> {
         }
         Commands::Build { args } => {
             run::build_agent(args)?;
+        }
+        Commands::Check => {
+            check::check_environment()?;
         }
         Commands::Tool { command } => match command {
             ToolCommands::Add { name } => {

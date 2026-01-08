@@ -2,7 +2,7 @@ use anyhow::Result;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use std::fs;
-use crate::utils::to_camel_case;
+use crate::utils::{self, to_camel_case, validate_rust_identifier};
 
 #[allow(dead_code)] // For now, until we wire it up fully if needed elsewhere
 mod templates {
@@ -59,6 +59,12 @@ async fn web_search(args: WebSearchArgs) -> ToolResult {
 }
 
 pub fn add_tool(name: String) -> Result<()> {
+    // Sanitize name for Rust module/file (snake_case)
+    let safe_name = name.replace('-', "_");
+
+    // Validate after sanitization
+    validate_rust_identifier(&safe_name)?;
+
     let current_dir = std::env::current_dir()?;
     let cargo_toml = current_dir.join("Cargo.toml");
 
@@ -71,8 +77,6 @@ pub fn add_tool(name: String) -> Result<()> {
         fs::create_dir_all(&tools_dir)?;
     }
 
-    // Sanitize name for Rust module/file (snake_case)
-    let safe_name = name.replace('-', "_");
     // Camel case for Structs
     let camel_name = to_camel_case(&safe_name);
 
@@ -138,35 +142,23 @@ async fn {name}(_args: {camel_name}Args) -> ToolResult {{
 
     println!("\nNext steps:");
 
-    // Optional: Try to append to mod.rs automatically
-    let mod_rs = tools_dir.join("mod.rs");
-    let mod_entry = format!("pub mod {};\n", safe_name);
+    // Use utils to ensure mod declaration in main.rs
+    utils::ensure_mod_decl(&current_dir, "tools")?;
 
-    if !mod_rs.exists() {
-         fs::write(&mod_rs, &mod_entry)?;
-         println!("   (Created src/tools/mod.rs and added module declaration)");
-    } else {
-         let content = fs::read_to_string(&mod_rs)?;
-         if !content.contains(&format!("mod {};", safe_name)) {
-             use std::io::Write;
-             let mut file = fs::OpenOptions::new().append(true).open(&mod_rs)?;
-             file.write_all(mod_entry.as_bytes())?;
-             println!("   (Added module declaration to src/tools/mod.rs)");
-         }
-    }
+    // Use utils to register module in tools/mod.rs
+    utils::register_child_module(&tools_dir, &safe_name)?;
 
-    println!("1. Ensure `pub mod tools;` is in `src/main.rs` or `src/lib.rs`.");
+    println!("1. Ensure `pub mod tools;` is in `src/main.rs` or `src/lib.rs` (attempted automatically).");
     println!("2. Register the tool in `src/main.rs`:");
     println!(
         "   .with_tool(crate::tools::{}::{})",
         safe_name, safe_name
     );
 
-    // Automatic wiring
-    if let Err(e) = wire_tool(&safe_name, &current_dir) {
+    // Automatic wiring using utils
+    let tool_call = format!("\n        .with_tool(crate::tools::{}::{})", safe_name, safe_name);
+    if let Err(e) = utils::wire_in_main(&current_dir, &tool_call) {
         println!("{}", style(format!("Warning: Automatic wiring failed: {}", e)).yellow());
-    } else {
-        println!("{}", style("✔ Automatically wired tool in main.rs").green());
     }
 
     Ok(())
@@ -203,6 +195,7 @@ pub fn list_tools() -> Result<()> {
 }
 
 pub fn remove_tool(name: String) -> Result<()> {
+    // Basic validation to prevent path traversal, though ensure_rust_identifier is stricter
     if name.contains('.') || name.contains('/') || name.contains('\\') {
         anyhow::bail!("Invalid tool name: {}", name);
     }
@@ -244,81 +237,8 @@ pub fn remove_tool(name: String) -> Result<()> {
     }
 
     // 3. Remove from src/main.rs wiring
-    unwire_tool(&safe_name, &current_dir)?;
-
-    Ok(())
-}
-
-fn unwire_tool(tool_name: &str, project_root: &std::path::Path) -> Result<()> {
-    let main_rs = project_root.join("src").join("main.rs");
-    if !main_rs.exists() {
-        return Ok(());
-    }
-
-    let content = fs::read_to_string(&main_rs)?;
-
-    // Pattern to look for: .with_tool(crate::tools::{tool_name}::{tool_name})
-    // We check for the tool call ignoring whitespace
-    let tool_call_substr = format!("crate::tools::{}::{}", tool_name, tool_name);
-
-    let mut new_lines: Vec<&str> = Vec::new();
-    let mut changed = false;
-
-    for line in content.lines() {
-        if line.contains(".with_tool(") && line.contains(&tool_call_substr) {
-            changed = true;
-            continue; // Skip this line
-        }
-        new_lines.push(line);
-    }
-
-    if changed {
-        fs::write(main_rs, new_lines.join("\n"))?;
-        println!("{} Removed tool wiring from src/main.rs", style("✔").green());
-    } else {
-         println!("{}", style("Warning: Could not find tool wiring in src/main.rs to remove").yellow());
-    }
-
-    Ok(())
-}
-
-fn wire_tool(tool_name: &str, project_root: &std::path::Path) -> Result<()> {
-    // 1. Ensure `pub mod tools;` in src/main.rs (or lib.rs)
-    let main_rs = project_root.join("src").join("main.rs");
-    if !main_rs.exists() {
-        return Ok(());
-    }
-
-    let mut content = fs::read_to_string(&main_rs)?;
-
-    // Add module declaration if missing
-    if !content.contains("mod tools;") {
-        // Naive insertion: find the last `use` or `mod` and insert after, or at top
-        // For simplicity, let's insert after the last `use ...;` block or at top if none.
-        if let Some(pos) = content.rfind("use ") {
-             if let Some(end_line) = content[pos..].find('\n') {
-                 let insert_pos = pos + end_line + 1;
-                 content.insert_str(insert_pos, "pub mod tools;\n");
-             }
-        } else {
-            content.insert_str(0, "pub mod tools;\n");
-        }
-    }
-
-    // 2. Add `.with_tool(...)` to the builder chain
-    // Look for `.builder(` or `.with_tool(` or `.with_system_instructions(`
-    // We want to insert .with_tool(crate::tools::{tool_name}::{tool_name})
-
-    let tool_call = format!("\n        .with_tool(crate::tools::{}::{})", tool_name, tool_name);
-
-    if !content.contains(&tool_call.trim()) {
-        // Try to find a good anchor point.
-        // We look for `.build()` and insert before it.
-        if let Some(pos) = content.rfind(".build()") {
-            content.insert_str(pos, &tool_call);
-            fs::write(main_rs, content)?;
-        }
-    }
+    let tool_call_substr = format!("crate::tools::{}::{}", safe_name, safe_name);
+    utils::unwire_in_main(&current_dir, &tool_call_substr)?;
 
     Ok(())
 }
