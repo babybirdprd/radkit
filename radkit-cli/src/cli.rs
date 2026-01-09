@@ -92,9 +92,13 @@ pub enum SkillCommands {
 
 #[derive(Subcommand)]
 pub enum ProviderCommands {
-    /// Add provider configuration instructions
+    /// Configure a provider
     Add {
-        /// Name of the provider (openai, anthropic, gemini)
+        /// Name of the provider (openai, anthropic, gemini, etc.)
         name: String,
     },
+    /// List the currently configured provider
+    List,
+    /// Remove (or get info on removing) the provider
+    Remove,
 }

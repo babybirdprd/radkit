@@ -10,3 +10,7 @@ include_dir = "0.7"
 console = "0.15"
 dialoguer = "0.11"
 tera = "1.19"
+syn = { version = "2.0", features = ["full", "parsing", "printing", "visit-mut"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+prettyplease = "0.2"
