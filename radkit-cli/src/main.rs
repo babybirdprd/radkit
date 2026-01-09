@@ -3,10 +3,11 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+pub mod rewriter;
 mod utils;
 
-use cli::{Cli, Commands, ToolCommands, SkillCommands, ProviderCommands};
-use commands::{create, run, tool, skill, provider};
+use cli::{Cli, Commands, ProviderCommands, SkillCommands, ToolCommands};
+use commands::{create, provider, run, skill, tool};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -54,6 +55,12 @@ fn main() -> Result<()> {
         Commands::Provider { command } => match command {
             ProviderCommands::Add { name } => {
                 provider::add_provider(name)?;
+            }
+            ProviderCommands::List => {
+                provider::list_providers()?;
+            }
+            ProviderCommands::Remove => {
+                provider::remove_provider()?;
             }
         },
     }

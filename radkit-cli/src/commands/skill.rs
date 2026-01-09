@@ -1,8 +1,101 @@
+use crate::rewriter::Rewriter;
+use crate::utils::to_camel_case;
 use anyhow::Result;
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Input};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 use std::fs;
-use crate::utils::to_camel_case;
+
+#[allow(dead_code)]
+mod templates {
+    pub const TODO_LIST_TEMPLATE: &str = r#"use radkit::agent::{OnRequestResult, SkillHandler};
+use radkit::errors::{AgentError, AgentResult};
+use radkit::macros::skill;
+use radkit::models::Content;
+use radkit::runtime::context::{ProgressSender, State};
+use radkit::runtime::AgentRuntime;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct TodoItem {
+    id: usize,
+    description: String,
+    completed: bool,
+}
+
+#[skill(
+    id = "todo_list",
+    name = "Todo List Skill",
+    description = "Manage a todo list with state",
+    tags = ["todo", "productivity"],
+    examples = [],
+    input_modes = ["text/plain"],
+    output_modes = ["application/json"]
+)]
+pub struct TodoListSkill {
+    items: Arc<Mutex<Vec<TodoItem>>>,
+}
+
+impl Default for TodoListSkill {
+    fn default() -> Self {
+        Self {
+            items: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl SkillHandler for TodoListSkill {
+    async fn on_request(
+        &self,
+        _state: &mut State,
+        progress: &ProgressSender,
+        _runtime: &dyn AgentRuntime,
+        content: Content,
+    ) -> AgentResult<OnRequestResult> {
+        let text = content.as_text().unwrap_or_default().trim();
+        let mut items = self.items.lock().map_err(|_| AgentError::InternalError("Mutex poisoned".into()))?;
+
+        progress.send_update("Processing todo command...").await?;
+
+        let response = if text.starts_with("add ") {
+            let description = text[4..].to_string();
+            let id = items.len() + 1;
+            items.push(TodoItem { id, description: description.clone(), completed: false });
+            format!("Added todo #{}", id)
+        } else if text.starts_with("list") {
+            if items.is_empty() {
+                "No items in todo list.".to_string()
+            } else {
+                items.iter()
+                    .map(|i| format!("[{}] {}: {}", if i.completed { "x" } else { " " }, i.id, i.description))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        } else if text.starts_with("complete ") {
+            if let Ok(id) = text[9..].trim().parse::<usize>() {
+                 if let Some(item) = items.iter_mut().find(|i| i.id == id) {
+                     item.completed = true;
+                     format!("Marked todo #{} as complete", id)
+                 } else {
+                     format!("Todo #{} not found", id)
+                 }
+            } else {
+                "Invalid ID".to_string()
+            }
+        } else {
+             "Commands: add <text>, list, complete <id>".to_string()
+        };
+
+        Ok(OnRequestResult::Completed {
+            message: Some(Content::from_text(response)),
+            artifacts: vec![],
+        })
+    }
+}
+"#;
+}
 
 pub fn add_skill(name: String) -> Result<()> {
     let current_dir = std::env::current_dir()?;
@@ -22,19 +115,28 @@ pub fn add_skill(name: String) -> Result<()> {
     // Camel case for Structs
     let camel_name = to_camel_case(&safe_name);
 
-    // Interactive prompts
-    let description: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Description of the skill")
-        .default(format!("Description for {}", camel_name))
-        .interact_text()?;
+    let template_options = vec!["Blank Skill", "Todo List (Stateful)"];
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Choose a skill template")
+        .items(&template_options)
+        .default(0)
+        .interact()?;
 
-    let skill_path = skills_dir.join(format!("{}.rs", safe_name));
-    if skill_path.exists() {
-        anyhow::bail!("Skill file 'src/skills/{}.rs' already exists", safe_name);
-    }
+    let skill_content = match selection {
+        1 => templates::TODO_LIST_TEMPLATE.to_string(), // Todo list is usually fixed name or adapted?
+        // Adapting todo list template to use the user's name:
+        // replace "todo_list" with safe_name
+        // replace "TodoListSkill" with camel_name + "Skill"
+        // replace "Todo List Skill" with description
+        _ => {
+            // Interactive prompts
+            let description: String = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Description of the skill")
+                .default(format!("Description for {}", camel_name))
+                .interact_text()?;
 
-    let skill_content = format!(
-        r#"use radkit::agent::{{OnRequestResult, SkillHandler}};
+            format!(
+                r#"use radkit::agent::{{OnRequestResult, SkillHandler}};
 use radkit::errors::{{AgentError, AgentResult}};
 use radkit::macros::skill;
 use radkit::models::Content;
@@ -72,11 +174,30 @@ impl SkillHandler for {camel_name}Skill {{
     }}
 }}
 "#,
-        safe_name = safe_name,
-        camel_name = camel_name
-    );
+                safe_name = safe_name,
+                camel_name = camel_name,
+                description = description
+            )
+        }
+    };
 
-    fs::write(&skill_path, skill_content)?;
+    // If todo list was selected, we might need to adjust struct names if user didn't name it "todo_list".
+    // For simplicity, if they chose "Todo List", we force the name or adapt it.
+    // Let's adapt it if they picked a name.
+    let final_content = if selection == 1 {
+        templates::TODO_LIST_TEMPLATE
+            .replace("todo_list", &safe_name)
+            .replace("TodoListSkill", &format!("{}Skill", camel_name))
+    } else {
+        skill_content
+    };
+
+    let skill_path = skills_dir.join(format!("{}.rs", safe_name));
+    if skill_path.exists() {
+        anyhow::bail!("Skill file 'src/skills/{}.rs' already exists", safe_name);
+    }
+
+    fs::write(&skill_path, final_content)?;
 
     println!(
         "{} Skill created at {}",
@@ -86,35 +207,29 @@ impl SkillHandler for {camel_name}Skill {{
 
     println!("\nNext steps:");
 
-    // Optional: Try to append to mod.rs automatically
     let mod_rs = skills_dir.join("mod.rs");
-    let mod_entry = format!("pub mod {};\n", safe_name);
-
     if !mod_rs.exists() {
-         fs::write(&mod_rs, &mod_entry)?;
-         println!("   (Created src/skills/mod.rs and added module declaration)");
+        fs::write(&mod_rs, format!("pub mod {};\n", safe_name))?;
+        println!("   (Created src/skills/mod.rs and added module declaration)");
     } else {
-         let content = fs::read_to_string(&mod_rs)?;
-         if !content.contains(&format!("mod {};", safe_name)) {
-             use std::io::Write;
-             let mut file = fs::OpenOptions::new().append(true).open(&mod_rs)?;
-             file.write_all(mod_entry.as_bytes())?;
-             println!("   (Added module declaration to src/skills/mod.rs)");
-         }
+        let content = fs::read_to_string(&mod_rs)?;
+        let mut rewriter = Rewriter::new(&content)?;
+        rewriter.add_module_declaration(&safe_name);
+        fs::write(&mod_rs, rewriter.to_string())?;
+        println!("   (Added module declaration to src/skills/mod.rs)");
     }
-
-    println!("1. Ensure `pub mod skills;` is in `src/main.rs` or `src/lib.rs`.");
-    println!("2. Register the skill in `src/main.rs`:");
-    println!(
-        "   .with_skill(crate::skills::{}::{}Skill)",
-        safe_name, camel_name
-    );
 
     // Automatic wiring
     if let Err(e) = wire_skill(&safe_name, &camel_name, &current_dir) {
-        println!("{}", style(format!("Warning: Automatic wiring failed: {}", e)).yellow());
+        println!(
+            "{}",
+            style(format!("Warning: Automatic wiring failed: {}", e)).yellow()
+        );
     } else {
-        println!("{}", style("✔ Automatically wired skill in main.rs").green());
+        println!(
+            "{}",
+            style("✔ Automatically wired skill in main.rs").green()
+        );
     }
 
     Ok(())
@@ -177,18 +292,13 @@ pub fn remove_skill(name: String) -> Result<()> {
     let mod_rs = skills_dir.join("mod.rs");
     if mod_rs.exists() {
         let content = fs::read_to_string(&mod_rs)?;
-        let mod_decl = format!("pub mod {};\n", safe_name);
-        let new_content = content.replace(&mod_decl, "");
-        // Try fallback
-        let new_content = if new_content == content {
-            content.replace(&format!("pub mod {};", safe_name), "")
-                   .replace(&format!("mod {};", safe_name), "")
-        } else {
-            new_content
-        };
-
-        fs::write(&mod_rs, new_content.trim())?;
-        println!("{} Removed module declaration from src/skills/mod.rs", style("✔").green());
+        let mut rewriter = Rewriter::new(&content)?;
+        rewriter.remove_module_declaration(&safe_name);
+        fs::write(&mod_rs, rewriter.to_string())?;
+        println!(
+            "{} Removed module declaration from src/skills/mod.rs",
+            style("✔").green()
+        );
     }
 
     // 3. Remove from src/main.rs wiring
@@ -203,62 +313,39 @@ fn unwire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Pa
         return Ok(());
     }
 
+    let skill_struct_name = format!("{}Skill", camel_name);
+
     let content = fs::read_to_string(&main_rs)?;
+    let mut rewriter = Rewriter::new(&content)?;
 
-    // Pattern: .with_skill(crate::skills::{skill_name}::{camel_name}Skill)
-    let skill_call_substr = format!("crate::skills::{}::{}Skill", skill_name, camel_name);
+    rewriter.remove_skill_wiring(skill_name, &skill_struct_name)?;
 
-    let mut new_lines: Vec<&str> = Vec::new();
-    let mut changed = false;
-
-    for line in content.lines() {
-        if line.contains(".with_skill(") && line.contains(&skill_call_substr) {
-            changed = true;
-            continue; // Skip this line
-        }
-        new_lines.push(line);
-    }
-
-    if changed {
-        fs::write(main_rs, new_lines.join("\n"))?;
-        println!("{} Removed skill wiring from src/main.rs", style("✔").green());
-    } else {
-         println!("{}", style("Warning: Could not find skill wiring in src/main.rs to remove").yellow());
-    }
+    fs::write(main_rs, rewriter.to_string())?;
+    println!(
+        "{} Removed skill wiring from src/main.rs",
+        style("✔").green()
+    );
 
     Ok(())
 }
 
 fn wire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Path) -> Result<()> {
-    // 1. Ensure `pub mod skills;` in src/main.rs (or lib.rs)
     let main_rs = project_root.join("src").join("main.rs");
     if !main_rs.exists() {
         return Ok(());
     }
 
-    let mut content = fs::read_to_string(&main_rs)?;
+    let content = fs::read_to_string(&main_rs)?;
+    let mut rewriter = Rewriter::new(&content)?;
 
-    // Add module declaration if missing
-    if !content.contains("mod skills;") {
-        if let Some(pos) = content.rfind("use ") {
-             if let Some(end_line) = content[pos..].find('\n') {
-                 let insert_pos = pos + end_line + 1;
-                 content.insert_str(insert_pos, "pub mod skills;\n");
-             }
-        } else {
-            content.insert_str(0, "pub mod skills;\n");
-        }
-    }
+    // 1. Ensure `pub mod skills;` in src/main.rs
+    rewriter.add_module_declaration("skills");
 
-    // 2. Add `.with_skill(...)` to the builder chain
-    let skill_call = format!("\n        .with_skill(crate::skills::{}::{}Skill)", skill_name, camel_name);
+    // 2. Add `.with_skill(...)`
+    let skill_struct_name = format!("{}Skill", camel_name);
+    rewriter.add_skill_wiring(skill_name, &skill_struct_name)?;
 
-    if !content.contains(&skill_call.trim()) {
-        if let Some(pos) = content.rfind(".build()") {
-            content.insert_str(pos, &skill_call);
-            fs::write(main_rs, content)?;
-        }
-    }
+    fs::write(main_rs, rewriter.to_string())?;
 
     Ok(())
 }

@@ -111,7 +111,13 @@ pub fn create_agent(
     context.insert("radkit_dependency", &radkit_dependency);
 
     // Let's use a helper for recursive extraction
-    extract_recursive(template_dir, target_dir, &template_name, &mut tera, &context)?;
+    extract_recursive(
+        template_dir,
+        target_dir,
+        &template_name,
+        &mut tera,
+        &context,
+    )?;
 
     println!(
         "\n{} Project created successfully in {}\n",
@@ -162,7 +168,7 @@ fn extract_recursive(
         });
 
         let final_content = if is_template_file {
-             tera.render_str(content, context)?
+            tera.render_str(content, context)?
         } else {
             content.to_string()
         };
