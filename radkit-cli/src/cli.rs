@@ -56,6 +56,8 @@ pub enum Commands {
         #[command(subcommand)]
         command: ProviderCommands,
     },
+    /// Launch the Interactive TUI Dashboard
+    Ui,
 }
 
 #[derive(Subcommand)]
