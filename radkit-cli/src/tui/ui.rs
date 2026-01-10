@@ -15,15 +15,36 @@ pub fn ui(f: &mut Frame, app: &App) {
     let block = Block::default().style(Style::default().bg(Color::Reset));
     f.render_widget(block, size);
 
+    // Main layout with footer for status bar
+    let main_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(size);
+
+    let screen_area = main_layout[0];
+    let status_bar_area = main_layout[1];
+
     match &app.current_screen {
-        CurrentScreen::Home => render_home(f, app),
-        CurrentScreen::CreateWizard(step) => render_create_wizard(f, app, *step),
-        CurrentScreen::Dashboard(tab) => render_dashboard(f, app, *tab),
-        CurrentScreen::ToolWizard(step) => render_tool_wizard(f, app, *step),
+        CurrentScreen::Home => render_home(f, app, screen_area),
+        CurrentScreen::CreateWizard(step) => render_create_wizard(f, app, *step, screen_area),
+        CurrentScreen::Dashboard(tab) => render_dashboard(f, app, *tab, screen_area),
+        CurrentScreen::ToolWizard(step) => render_tool_wizard(f, app, *step, screen_area),
     }
+
+    // Status Bar
+    let status_text = match &app.current_screen {
+        CurrentScreen::Home => "c: Create Agent | q: Quit",
+        CurrentScreen::CreateWizard(_) => "↑/↓: Select | Enter: Confirm | Esc: Back",
+        CurrentScreen::Dashboard(_) => "Tab/←/→: Switch Tab | a: Add Item | q: Quit",
+        CurrentScreen::ToolWizard(_) => "↑/↓: Select | Enter: Confirm | Esc: Back",
+    };
+    let status_bar = Paragraph::new(status_text)
+        .style(Style::default().fg(Color::Black).bg(Color::Cyan))
+        .alignment(Alignment::Center);
+    f.render_widget(status_bar, status_bar_area);
 }
 
-fn render_home(f: &mut Frame, _app: &App) {
+fn render_home(f: &mut Frame, _app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -31,22 +52,24 @@ fn render_home(f: &mut Frame, _app: &App) {
             Constraint::Percentage(40),
             Constraint::Percentage(30),
         ])
-        .split(f.size());
+        .split(area);
 
-    let title = Paragraph::new(vec![
-        Line::from(vec![Span::raw("   ___           _ _    _ _   ")]),
-        Line::from(vec![Span::raw("  / _ \\ __ _  __| | | _(_) |_ ")]),
-        Line::from(vec![Span::raw(" / /_)/ _` |/ _` | |/ / | __|")]),
-        Line::from(vec![Span::raw("/ ___/ (_| | (_| |   <| | |_ ")]),
-        Line::from(vec![Span::raw("\\/    \\__,_|\\__,_|_|\\_\\_|\\__|")]),
+    let title_text = vec![
+        Line::from(vec![Span::styled("   ___           _ _    _ _   ", Style::default().fg(Color::Cyan))]),
+        Line::from(vec![Span::styled("  / _ \\ __ _  __| | | _(_) |_ ", Style::default().fg(Color::Cyan))]),
+        Line::from(vec![Span::styled(" / /_)/ _` |/ _` | |/ / | __|", Style::default().fg(Color::Cyan))]),
+        Line::from(vec![Span::styled("/ ___/ (_| | (_| |   <| | |_ ", Style::default().fg(Color::Cyan))]),
+        Line::from(vec![Span::styled("\\/    \\__,_|\\__,_|_|\\_\\_|\\__|", Style::default().fg(Color::Cyan))]),
         Line::from(vec![Span::raw("")]),
         Line::from(vec![Span::styled(
             "Welcome to Radkit CLI",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         )]),
-    ])
-    .alignment(Alignment::Center)
-    .block(Block::default().borders(Borders::NONE));
+    ];
+
+    let title = Paragraph::new(title_text)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::NONE));
 
     f.render_widget(title, chunks[0]);
 
@@ -69,13 +92,21 @@ fn render_home(f: &mut Frame, _app: &App) {
     f.render_widget(menu, centered_rect(60, 20, chunks[1]));
 }
 
-fn render_create_wizard(f: &mut Frame, app: &App, step: WizardStep) {
-     let chunks = Layout::default()
+fn render_create_wizard(f: &mut Frame, app: &App, step: WizardStep, area: Rect) {
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
-        .split(f.size());
+        .split(area);
 
-    let title = Paragraph::new("Create New Agent Wizard")
+    let step_num = match step {
+        WizardStep::NameInput => 1,
+        WizardStep::TemplateSelection => 2,
+        WizardStep::ProviderSelection => 3,
+        WizardStep::Confirmation => 4,
+    };
+
+    let title_text = format!("Create New Agent Wizard - Step {}/4", step_num);
+    let title = Paragraph::new(title_text)
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -156,11 +187,11 @@ fn render_create_wizard(f: &mut Frame, app: &App, step: WizardStep) {
     }
 }
 
-fn render_dashboard(f: &mut Frame, app: &App, tab: DashboardTab) {
+fn render_dashboard(f: &mut Frame, app: &App, tab: DashboardTab, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
-        .split(f.size());
+        .split(area);
 
     // Tabs
     let titles: Vec<Line> = vec!["Overview", "Tools", "Skills", "Providers"]
@@ -188,7 +219,7 @@ fn render_dashboard(f: &mut Frame, app: &App, tab: DashboardTab) {
     f.render_widget(tabs, chunks[0]);
 
     // Footer
-    let footer = Paragraph::new("Press <Tab> to switch tabs, 'q' to quit")
+    let footer = Paragraph::new("Dashboard Mode")
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(footer, chunks[2]);
@@ -196,15 +227,39 @@ fn render_dashboard(f: &mut Frame, app: &App, tab: DashboardTab) {
     // Content
     match tab {
         DashboardTab::Overview => {
-            let info = vec![
-                Line::from(vec![Span::styled("Current Provider: ", Style::default().fg(Color::Cyan)), Span::raw(&app.current_provider)]),
-                Line::from(vec![Span::styled("Tools Count: ", Style::default().fg(Color::Cyan)), Span::raw(app.tools_list.len().to_string())]),
-                Line::from(vec![Span::styled("Skills Count: ", Style::default().fg(Color::Cyan)), Span::raw(app.skills_list.len().to_string())]),
-            ];
+            let info_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(33),
+                ])
+                .split(chunks[1]);
 
-            let p = Paragraph::new(info)
-                .block(Block::default().borders(Borders::ALL).title("Overview"));
-            f.render_widget(p, chunks[1]);
+            let provider_block = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(&app.current_provider, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Provider"));
+
+            let tools_block = Paragraph::new(vec![
+                 Line::from(""),
+                 Line::from(Span::styled(app.tools_list.len().to_string(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Tools"));
+
+            let skills_block = Paragraph::new(vec![
+                 Line::from(""),
+                 Line::from(Span::styled(app.skills_list.len().to_string(), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Skills"));
+
+            f.render_widget(provider_block, info_chunks[0]);
+            f.render_widget(tools_block, info_chunks[1]);
+            f.render_widget(skills_block, info_chunks[2]);
         },
         DashboardTab::Tools => {
             let mut items: Vec<ListItem> = app.tools_list
@@ -238,16 +293,15 @@ fn render_dashboard(f: &mut Frame, app: &App, tab: DashboardTab) {
     }
 }
 
-fn render_tool_wizard(f: &mut Frame, app: &App, step: ToolWizardStep) {
-    let area = centered_rect(60, 40, f.size());
-    f.render_widget(Block::default().borders(Borders::ALL).title("Add Tool Wizard"), area);
+fn render_tool_wizard(f: &mut Frame, app: &App, step: ToolWizardStep, area: Rect) {
+    let centered = centered_rect(60, 40, area);
+    f.render_widget(Block::default().borders(Borders::ALL).title("Add Tool Wizard"), centered);
 
-    // We should just use margin or layout within `area`.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([Constraint::Min(0)])
-        .split(area);
+        .split(centered);
 
     match step {
         ToolWizardStep::TemplateSelection => {

@@ -1,8 +1,10 @@
 use crate::rewriter::Rewriter;
 use crate::utils::to_camel_case;
 use anyhow::Result;
+use colored::*;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 
 #[allow(dead_code)]
@@ -197,38 +199,53 @@ impl SkillHandler for {camel_name}Skill {{
         anyhow::bail!("Skill file 'src/skills/{}.rs' already exists", safe_name);
     }
 
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message("Creating skill files and wiring...");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
     fs::write(&skill_path, final_content)?;
 
-    println!(
-        "{} Skill created at {}",
-        style("✔").green(),
-        style(skill_path.display()).bold()
-    );
-
-    println!("\nNext steps:");
-
     let mod_rs = skills_dir.join("mod.rs");
-    if !mod_rs.exists() {
+    let mod_rs_status = if !mod_rs.exists() {
         fs::write(&mod_rs, format!("pub mod {};\n", safe_name))?;
-        println!("   (Created src/skills/mod.rs and added module declaration)");
+        "Created src/skills/mod.rs and added module declaration"
     } else {
         let content = fs::read_to_string(&mod_rs)?;
         let mut rewriter = Rewriter::new(&content)?;
         rewriter.add_module_declaration(&safe_name);
         fs::write(&mod_rs, rewriter.to_string())?;
-        println!("   (Added module declaration to src/skills/mod.rs)");
-    }
+        "Added module declaration to src/skills/mod.rs"
+    };
+
+    let wire_result = wire_skill(&safe_name, &camel_name, &current_dir);
+
+    pb.finish_and_clear();
+
+    println!(
+        "{} Skill created at {}",
+        "✔".green(),
+        skill_path.display().to_string().bold()
+    );
+
+    println!("\nNext steps:");
+    println!("   ({})", mod_rs_status);
 
     // Automatic wiring
-    if let Err(e) = wire_skill(&safe_name, &camel_name, &current_dir) {
+    if let Err(e) = wire_result {
         println!(
             "{}",
-            style(format!("Warning: Automatic wiring failed: {}", e)).yellow()
+            format!("Warning: Automatic wiring failed: {}", e).yellow()
         );
     } else {
         println!(
             "{}",
-            style("✔ Automatically wired skill in main.rs").green()
+            "✔ Automatically wired skill in main.rs".green()
         );
     }
 
@@ -284,8 +301,8 @@ pub fn remove_skill(name: String) -> Result<()> {
     fs::remove_file(&skill_path)?;
     println!(
         "{} Removed skill file {}",
-        style("✔").green(),
-        style(skill_path.display()).bold()
+        "✔".green(),
+        skill_path.display().to_string().bold()
     );
 
     // 2. Remove from src/skills/mod.rs
@@ -297,7 +314,7 @@ pub fn remove_skill(name: String) -> Result<()> {
         fs::write(&mod_rs, rewriter.to_string())?;
         println!(
             "{} Removed module declaration from src/skills/mod.rs",
-            style("✔").green()
+            "✔".green()
         );
     }
 
@@ -323,7 +340,7 @@ fn unwire_skill(skill_name: &str, camel_name: &str, project_root: &std::path::Pa
     fs::write(main_rs, rewriter.to_string())?;
     println!(
         "{} Removed skill wiring from src/main.rs",
-        style("✔").green()
+        "✔".green()
     );
 
     Ok(())
