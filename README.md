@@ -66,6 +66,16 @@ Radkit ships optional capabilities that you can opt into per target:
 - `runtime`: Enables the native runtime handle, HTTP server, tracing, and other dependencies required to run A2A-compliant agents locally.
 - `dev-ui`: Builds on top of `runtime` and serves an interactive UI (native-only) where you can trigger tasks, and inspect streaming output.
 
+## CLI
+
+Radkit comes with a powerful CLI to help you build and manage agents.
+
+[**Explore the Radkit CLI**](radkit-cli/README.md)
+
+- Scaffolding new projects
+- Interactive TUI dashboard
+- Easy tool and skill management
+
 ## Core Concepts
 
 ### Thread - Conversation Context
