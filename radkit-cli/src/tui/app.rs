@@ -252,12 +252,20 @@ impl App {
         use crossterm::event::KeyCode;
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Right => {
                 self.dashboard_tab = match self.dashboard_tab {
                     DashboardTab::Overview => DashboardTab::Tools,
                     DashboardTab::Tools => DashboardTab::Skills,
                     DashboardTab::Skills => DashboardTab::Providers,
                     DashboardTab::Providers => DashboardTab::Overview,
+                }
+            },
+            KeyCode::Left => {
+                self.dashboard_tab = match self.dashboard_tab {
+                    DashboardTab::Overview => DashboardTab::Providers,
+                    DashboardTab::Tools => DashboardTab::Overview,
+                    DashboardTab::Skills => DashboardTab::Tools,
+                    DashboardTab::Providers => DashboardTab::Skills,
                 }
             },
             KeyCode::Char('a') => {

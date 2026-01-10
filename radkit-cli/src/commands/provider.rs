@@ -1,5 +1,6 @@
 use crate::rewriter::Rewriter;
 use anyhow::Result;
+use colored::*;
 use console::style;
 use std::fs;
 
@@ -28,8 +29,8 @@ pub fn add_provider(name: String) -> Result<()> {
         anyhow::bail!("src/main.rs not found. Are you in a radkit agent project root?");
     }
 
-    println!("{}", style("Configuring Provider").bold());
-    println!("{}", style("-----------------------------------").dim());
+    println!("{}", "Configuring Provider".bold().cyan());
+    println!("{}", "-----------------------------------".dimmed());
     println!("1. Ensure you have the environment variable set:");
     println!("   export {}=your_key_here", env_var);
 
@@ -42,20 +43,20 @@ pub fn add_provider(name: String) -> Result<()> {
             fs::write(main_rs, rewriter.to_string())?;
             println!(
                 "{}",
-                style(format!(
+                format!(
                     "✔ Automatically updated src/main.rs to use {}",
                     provider_struct
-                ))
+                )
                 .green()
             );
         }
         Err(e) => {
             println!(
                 "{}",
-                style(format!(
+                format!(
                     "Warning: Could not automatically update provider: {}",
                     e
-                ))
+                )
                 .yellow()
             );
             println!("\nPlease manually update your `src/main.rs`:");

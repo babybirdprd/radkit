@@ -1,8 +1,10 @@
 use crate::rewriter::Rewriter;
 use crate::utils::to_camel_case;
 use anyhow::Result;
+use colored::*;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 
 #[allow(dead_code)]
@@ -353,13 +355,17 @@ async fn {name}(_args: {camel_name}Args) -> ToolResult {{
         anyhow::bail!("Tool file 'src/tools/{}.rs' already exists", safe_name);
     }
 
-    fs::write(&tool_path, tool_content)?;
-
-    println!(
-        "{} Tool created at {}",
-        style("✔").green(),
-        style(tool_path.display()).bold()
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
     );
+    pb.set_message("Creating tool files and wiring...");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    fs::write(&tool_path, tool_content)?;
 
     let mod_rs = tools_dir.join("mod.rs");
     if !mod_rs.exists() {
@@ -371,13 +377,23 @@ async fn {name}(_args: {camel_name}Args) -> ToolResult {{
         fs::write(&mod_rs, rewriter.to_string())?;
     }
 
-    if let Err(e) = wire_tool(&safe_name, &current_dir) {
+    let wire_result = wire_tool(&safe_name, &current_dir);
+
+    pb.finish_and_clear();
+
+    println!(
+        "{} Tool created at {}",
+        "✔".green(),
+        tool_path.display().to_string().bold()
+    );
+
+    if let Err(e) = wire_result {
         println!(
             "{}",
-            style(format!("Warning: Automatic wiring failed: {}", e)).yellow()
+            format!("Warning: Automatic wiring failed: {}", e).yellow()
         );
     } else {
-        println!("{}", style("✔ Automatically wired tool in main.rs").green());
+        println!("{}", "✔ Automatically wired tool in main.rs".green());
     }
 
     Ok(())
@@ -431,8 +447,8 @@ pub fn remove_tool(name: String) -> Result<()> {
     fs::remove_file(&tool_path)?;
     println!(
         "{} Removed tool file {}",
-        style("✔").green(),
-        style(tool_path.display()).bold()
+        "✔".green(),
+        tool_path.display().to_string().bold()
     );
 
     // 2. Remove from src/tools/mod.rs
@@ -444,7 +460,7 @@ pub fn remove_tool(name: String) -> Result<()> {
         fs::write(&mod_rs, rewriter.to_string())?;
         println!(
             "{} Removed module declaration from src/tools/mod.rs",
-            style("✔").green()
+            "✔".green()
         );
     }
 
@@ -468,7 +484,7 @@ fn unwire_tool(tool_name: &str, project_root: &std::path::Path) -> Result<()> {
     fs::write(main_rs, rewriter.to_string())?;
     println!(
         "{} Removed tool wiring from src/main.rs",
-        style("✔").green()
+        "✔".green()
     );
 
     Ok(())

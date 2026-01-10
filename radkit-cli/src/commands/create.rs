@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use colored::*;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use include_dir::{include_dir, Dir};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use std::path::Path;
 use tera::{Context as TeraContext, Tera};
@@ -69,10 +71,20 @@ pub fn create_agent(
 
     println!(
         "Creating new project '{}' using template '{}' with {}...",
-        style(&project_name).green(),
-        style(&template_name).cyan(),
-        style(&provider_name).yellow()
+        project_name.as_str().green().bold(),
+        template_name.as_str().cyan(),
+        provider_name.as_str().yellow()
     );
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message("Scaffolding project files...");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
     let mut tera = Tera::default();
     let mut context = TeraContext::new();
@@ -119,10 +131,12 @@ pub fn create_agent(
         &context,
     )?;
 
+    pb.finish_and_clear();
+
     println!(
         "\n{} Project created successfully in {}\n",
-        style("✔").green(),
-        style(target_dir.display()).bold()
+        "✔".green(),
+        target_dir.display().to_string().bold()
     );
     println!("To get started:");
     println!("  cd {}", project_name);
